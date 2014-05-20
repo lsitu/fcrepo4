@@ -31,10 +31,28 @@ import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.BasicHttpEntity;
 import org.junit.Test;
 
+/**
+ * This "test" is a utility for collecting the timing of concurrent operations operations.
+ * It takes roughly 2 minutes to complete and should only be run if the timing metrics are wanted.
+ * In order to activate this utility, the following System Property must be set:
+ *
+ *  mvn -DRUN_TEST_CRUD_CONCURRENT install
+ *
+ *  @author lsitu
+ */
 public class FedoraCrudConcurrentIT extends AbstractResourceIT {
+
+    private static final String TEST_ACTIVATION_PROPERTY = "RUN_TEST_CRUD_CONCURRENT";
 
     @Test
     public void testConcurrentIngest() throws Exception {
+        setLogger();
+
+        if (System.getProperty(TEST_ACTIVATION_PROPERTY) == null) {
+            logger.info("Not running tests because system property not set: {}", TEST_ACTIVATION_PROPERTY);
+            return;
+        }
+
         int[] numThreadsToTest = {2, 4, 8, 16, 32};
         logger.info("# Start CRUD concurrent performance testing...");
         for (int i=0; i < numThreadsToTest.length; i++) {
@@ -48,7 +66,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
      * @param numThreads
      * @throws Exception
      */
-    protected void startCrudConcurrentPerformanceTest(int numThreads) throws Exception {
+    private void startCrudConcurrentPerformanceTest(final int numThreads) throws Exception {
         String pid = null;
 
         // Tasks to run
@@ -68,11 +86,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             tasks.add(task);
         }
         startThreads(tasks) ;
-        Thread.sleep(1000);
-        int totalResponseTime = 0;
-        for (int i = 0; i< numThreads; i++) {
-            totalResponseTime += tasks.get(i).responseTime;
-        }
+        long totalResponseTime = getTotalResponseTime(numThreads, tasks);
         logger.info("** Average response time for {} concurrent threads to CREATE object: {} ms", numThreads, totalResponseTime/numThreads);
 
         tasks.clear();
@@ -87,7 +101,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             final BasicHttpEntity e = new BasicHttpEntity();
             e.setContent(new ByteArrayInputStream(
                         ("INSERT { <" + subjectUri + "> <http://purl.org/dc/elements/1.1/title> "
-                                + "\"Ttile: " + taskName + pid + "\" } WHERE {}"
+                                + "\"Title: " + taskName + pid + "\" } WHERE {}"
                         ).getBytes()));
             request.setEntity(e);
             final HttpRunner task = new HttpRunner(request, taskName);
@@ -95,11 +109,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             tasks.add(task);
         }
         startThreads(tasks) ;
-        Thread.sleep(1000);
-        totalResponseTime = 0;
-        for (int i = 0; i< numThreads; i++) {
-            totalResponseTime += tasks.get(i).responseTime;
-        }
+        totalResponseTime = getTotalResponseTime(numThreads, tasks);
         logger.info("** Average response time for {} concurrent threads to UPDATE object: {} ms", numThreads, totalResponseTime/numThreads);
 
 
@@ -115,11 +125,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             tasks.add(task);
         }
         startThreads(tasks) ;
-        Thread.sleep(1000);
-        totalResponseTime = 0;
-        for (int i = 0; i< numThreads; i++) {
-            totalResponseTime += tasks.get(i).responseTime;
-        }
+        totalResponseTime = getTotalResponseTime(numThreads, tasks);
         logger.info("** Average response time for {} concurrent threads to INGEST content file: {} ms", numThreads, totalResponseTime/numThreads);
 
 
@@ -135,11 +141,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             tasks.add(task);
         }
         startThreads(tasks) ;
-        Thread.sleep(1000);
-        totalResponseTime = 0;
-        for (int i = 0; i< numThreads; i++) {
-            totalResponseTime += tasks.get(i).responseTime;
-        }
+        totalResponseTime = getTotalResponseTime(numThreads, tasks);
         logger.info("** Average response time for {} concurrent threads to UPDATE content file: {} ms", numThreads, totalResponseTime/numThreads);
 
 
@@ -155,11 +157,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             tasks.add(task);
         }
         startThreads(tasks) ;
-        Thread.sleep(1000);
-        totalResponseTime = 0;
-        for (int i = 0; i< numThreads; i++) {
-            totalResponseTime += tasks.get(i).responseTime;
-        }
+        totalResponseTime = getTotalResponseTime(numThreads, tasks);
         logger.info("** Average response time for {} concurrent threads to RETRIEVE content file: {} ms", numThreads, totalResponseTime/numThreads);
 
 
@@ -175,13 +173,8 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             tasks.add(task);
         }
         startThreads(tasks) ;
-        Thread.sleep(1000);
-        totalResponseTime = 0;
-        for (int i = 0; i< numThreads; i++) {
-            totalResponseTime += tasks.get(i).responseTime;
-        }
+        totalResponseTime = getTotalResponseTime(numThreads, tasks);
         logger.info("** Average response time for {} concurrent threads to DELETE content file: {} ms", numThreads, totalResponseTime/numThreads);
-
 
 
         tasks.clear();
@@ -196,11 +189,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             tasks.add(task);
         }
         startThreads(tasks) ;
-        Thread.sleep(1000);
-        totalResponseTime = 0;
-        for (int i = 0; i< numThreads; i++) {
-            totalResponseTime += tasks.get(i).responseTime;
-        }
+        totalResponseTime = getTotalResponseTime(numThreads, tasks);
         logger.info("** Average response time for {} concurrent threads to RETRIEVE object: {} ms", numThreads, totalResponseTime/numThreads);
 
 
@@ -216,17 +205,23 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
             tasks.add(task);
         }
         startThreads(tasks) ;
-        Thread.sleep(1000);
-        totalResponseTime = 0;
-        for (int i = 0; i< numThreads; i++) {
-            totalResponseTime += tasks.get(i).responseTime;
-        }
+        totalResponseTime = getTotalResponseTime(numThreads, tasks);
         logger.info("** Average response time for {} concurrent threads to DELETE object: {} ms", numThreads, totalResponseTime/numThreads);
 
     }
 
-    private void startThreads(List<HttpRunner> tasks) throws InterruptedException{
-        int taskSize = tasks.size();
+    private long getTotalResponseTime(final int numThreads,
+                                      final List<HttpRunner> tasks) throws InterruptedException {
+        Thread.sleep(1000);
+        long totalResponseTime = 0;
+        for (int i = 0; i< numThreads; i++) {
+            totalResponseTime += tasks.get(i).responseTime;
+        }
+        return totalResponseTime;
+    }
+
+    private void startThreads(final List<HttpRunner> tasks) throws InterruptedException{
+        final int taskSize = tasks.size();
         for (int i = 0; i < taskSize; i++) {
 
             final Thread thread = new Thread(tasks.get(i));
@@ -257,7 +252,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
 
         private int expectedStatusCode = 0;
 
-        public HttpRunner (HttpRequestBase request, String taskName) {
+        public HttpRunner (final HttpRequestBase request, final String taskName) {
             this.taskName = taskName;
             this.request = request;
             // Use its own HttpClient instance to make sure each performance test
@@ -274,7 +269,7 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
                 responseTime = endTime - startTime;
                 statusCode = response.getStatusLine().getStatusCode();
                 logger.info("{} {} with status {} in {} ms.", taskName, request.getURI().toString(), statusCode, String.valueOf(responseTime));
-                assertEquals(taskName + " existed absnormally.", expectedStatusCode, statusCode);
+                assertEquals(taskName + " exited abnormally.", expectedStatusCode, statusCode);
             } catch (IOException e) {
                 logger.error("Error {} {} got IOException: {}", taskName, request.getURI().toString(), e.getMessage());
             } finally {
@@ -292,28 +287,13 @@ public class FedoraCrudConcurrentIT extends AbstractResourceIT {
         }
 
 
-        public String getTaskName() {
-            return taskName;
-        }
-
-
-        public void setTaskName(String taskName) {
-            this.taskName = taskName;
-        }
-
-
         public int getStatusCode() {
             return statusCode;
         }
 
 
-        public void setExpectedStatusCode(int expectedStatusCode) {
+        public void setExpectedStatusCode(final int expectedStatusCode) {
             this.expectedStatusCode = expectedStatusCode;
-        }
-
-
-        public long getResponseTime() {
-            return responseTime;
         }
 
     }
