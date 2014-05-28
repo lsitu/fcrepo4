@@ -591,15 +591,11 @@ public class FedoraNodesTest {
         assertEquals(SC_OK, response.getStatus());
     }
 
-    @Test
+    @Test(expected = WebApplicationException.class)
     public void testCheckJcrNamespace() {
         final List<PathSegment> pathList = createPathList("anypath");
         pathList.add(createPathList("jcr:path").get(0));
-        assertTrue(FedoraNodes.checkPathJcrContent(pathList));
+        testObj.throwIfPathIncludesJcr(pathList, "TEST");
     }
 
-    @Test(expected = WebApplicationException.class)
-    public void testResonseNotFound() {
-        FedoraNodes.responseNotFound();
-    }
 }
