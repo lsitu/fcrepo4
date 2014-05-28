@@ -91,6 +91,7 @@ import javax.ws.rs.core.Request;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.hp.hpl.jena.rdf.model.ResourceFactory;
 import com.sun.jersey.core.header.ContentDisposition;
 import com.sun.jersey.multipart.FormDataParam;
@@ -154,11 +155,7 @@ public class FedoraNodes extends AbstractResource {
                      @Context final Request request,
                      @Context final HttpServletResponse servletResponse,
                      @Context final UriInfo uriInfo) throws RepositoryException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("HEAD request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(pathList, "HEAD");
 
         final String path = toPath(pathList);
         LOGGER.trace("Getting head for: {}", path);
@@ -198,12 +195,7 @@ public class FedoraNodes extends AbstractResource {
             @Context final Request request,
             @Context final HttpServletResponse servletResponse,
             @Context final UriInfo uriInfo) throws RepositoryException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("MOVE request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
-
+        throwIfPathIncludesJcr(pathList, "MOVE");
 
         final String path = toPath(pathList);
         LOGGER.trace("Getting profile for: {}", path);
@@ -362,11 +354,7 @@ public class FedoraNodes extends AbstractResource {
             final InputStream requestBodyStream,
             @Context final Request request, @Context final HttpServletResponse servletResponse)
         throws RepositoryException, IOException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("PATCH request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(pathList, "PATCH");
 
         final String path = toPath(pathList);
         LOGGER.debug("Attempting to update path: {}", path);
@@ -431,11 +419,7 @@ public class FedoraNodes extends AbstractResource {
             @Context final Request request,
             @Context final HttpServletResponse servletResponse) throws RepositoryException, ParseException,
             IOException, InvalidChecksumException, URISyntaxException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("PUT request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(pathList, "PUT");
 
         final String path = toPath(pathList);
         LOGGER.debug("Attempting to replace path: {}", path);
@@ -519,11 +503,7 @@ public class FedoraNodes extends AbstractResource {
             final UriInfo uriInfo, final InputStream requestBodyStream)
         throws RepositoryException, ParseException, IOException,
                    InvalidChecksumException, URISyntaxException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("POST request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(pathList, "POST");
 
         String pid;
         final String newObjectPath;
@@ -723,11 +703,7 @@ public class FedoraNodes extends AbstractResource {
                                                 @Context final UriInfo uriInfo,
                                                 @FormDataParam("file") final InputStream file
     ) throws RepositoryException, URISyntaxException, InvalidChecksumException, ParseException, IOException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("POST request with multipart attachment with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(pathList, "POST with multipart attachment");
 
         final MediaType effectiveContentType = file == null ? null : MediaType.APPLICATION_OCTET_STREAM_TYPE;
         return createObject(pathList, mixin, null, null, effectiveContentType, slug, servletResponse, uriInfo, file);
@@ -746,11 +722,7 @@ public class FedoraNodes extends AbstractResource {
     public Response deleteObject(@PathParam("path")
             final List<PathSegment> pathList,
             @Context final Request request) throws RepositoryException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("DELETE request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(pathList, "DELETE");
 
         try {
 
@@ -794,11 +766,7 @@ public class FedoraNodes extends AbstractResource {
     public Response copyObject(@PathParam("path") final List<PathSegment> path,
                                @HeaderParam("Destination") final String destinationUri)
         throws RepositoryException, URISyntaxException {
-        if (checkPathJcrContent(path)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("COPY request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(path, "COPY");
 
         try {
 
@@ -845,11 +813,7 @@ public class FedoraNodes extends AbstractResource {
                                @HeaderParam("Destination") final String destinationUri,
                                @Context final Request request)
         throws RepositoryException, URISyntaxException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("MOVE request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(pathList, "MOVE");
 
         try {
 
@@ -903,11 +867,7 @@ public class FedoraNodes extends AbstractResource {
     public Response options(@PathParam("path") final List<PathSegment> pathList,
                             @Context final HttpServletResponse servletResponse)
         throws RepositoryException {
-        if (checkPathJcrContent(pathList)) {
-            final String requestPath = uriInfo.getPath();
-            LOGGER.trace("OPTIONS request with jcr namespace is not allowed: {} ", requestPath);
-            responseNotFound();
-        }
+        throwIfPathIncludesJcr(pathList, "OPTIONS");
 
         addOptionsHttpHeaders(servletResponse);
         return status(OK).build();
@@ -916,24 +876,18 @@ public class FedoraNodes extends AbstractResource {
     /**
      * Method to check for any jcr namespace element in the path
      */
-    public static boolean checkPathJcrContent(final List<PathSegment> pathList) {
-        final int pathSize = pathList.size();
-        if (pathList == null || pathSize == 0) {
-            return false;
+    @VisibleForTesting
+    protected void throwIfPathIncludesJcr(final List<PathSegment> pathList, final String msg) {
+        if (pathList == null || pathList.size() == 0) {
+            return;
         }
-        final PathSegment pathSegment = pathList.get(pathSize - 1);
+        final PathSegment pathSegment = pathList.get(pathList.size() - 1);
         final String[] tokens = pathSegment.getPath().split(":");
         if (tokens.length == 2 && tokens[0].equalsIgnoreCase("jcr")) {
-            return true;
+            final String requestPath = uriInfo.getPath();
+            LOGGER.trace("{} request with jcr namespace is not allowed: {} ", msg, requestPath);
+            throw new WebApplicationException(notFound().build());
         }
-        return false;
     }
 
-    /**
-     * Send response not found
-     * @param path
-     */
-    public static void responseNotFound() {
-        throw new WebApplicationException(notFound().build());
-    }
 }
