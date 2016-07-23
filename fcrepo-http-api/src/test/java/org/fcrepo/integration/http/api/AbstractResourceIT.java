@@ -25,6 +25,7 @@ import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.TEXT_PLAIN;
 import static javax.ws.rs.core.Response.Status.CREATED;
 import static javax.ws.rs.core.Response.Status.GONE;
+import static javax.ws.rs.core.Response.Status.NOT_FOUND;
 import static javax.ws.rs.core.Response.Status.NO_CONTENT;
 import static javax.ws.rs.core.Response.Status.OK;
 import static org.fcrepo.http.commons.test.util.TestHelpers.parseTriples;
@@ -34,12 +35,19 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.slf4j.LoggerFactory.getLogger;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.util.Collection;
 
 import org.apache.http.Header;
 import org.fcrepo.http.commons.test.util.CloseableGraphStore;
+
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
@@ -58,6 +66,7 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.entity.StringEntity;
+import org.apache.http.entity.FileEntity;
 import org.apache.http.impl.auth.BasicScheme;
 import org.apache.http.impl.client.BasicAuthCache;
 import org.apache.http.impl.client.BasicCredentialsProvider;
@@ -143,6 +152,23 @@ public abstract class AbstractResourceIT {
         put.setEntity(new StringEntity(content == null ? "" : content));
         put.setHeader("Content-Type", TEXT_PLAIN);
         return put;
+    }
+
+    protected static HttpPut putDSFileMethod(final String pid, final String ds, final File content)
+            throws UnsupportedEncodingException {
+        final HttpPut put = new HttpPut(serverAddress + pid + "/" + ds);
+        put.setEntity(new FileEntity(content));
+        put.setHeader("Content-Type", TEXT_PLAIN);
+        return put;
+    }
+
+    protected static HttpPost postDSFileMethod(final String pid, final String ds, final File content)
+            throws UnsupportedEncodingException {
+        final HttpPost post = new HttpPost(serverAddress + pid + "/");
+        post.setEntity(new FileEntity(content));
+        post.addHeader("Slug", ds);
+        post.setHeader("Content-Type", TEXT_PLAIN);
+        return post;
     }
 
     protected static HttpGet getDSMethod(final String pid, final String ds) {
@@ -424,5 +450,39 @@ public abstract class AbstractResourceIT {
         final String location = serverAddress + id;
         assertThat("Expected object to be deleted", getStatus(new HttpHead(location)), is(GONE.getStatusCode()));
         assertThat("Expected object to be deleted", getStatus(new HttpGet(location)), is(GONE.getStatusCode()));
+    }
+
+    protected static void concurrentSNSDataStreamIngest(final HttpUriRequest req)
+            throws InterruptedException, ExecutionException, UnsupportedEncodingException {
+
+        final ExecutorService executor = Executors.newFixedThreadPool(2);
+        final Future<Integer> firstTask = executor.submit(() -> {
+            return getStatus(req);
+        });
+
+        final Future<Integer> secondTask = executor.submit(() -> {
+            return getStatus(req);
+        });
+
+        // verify the status code that could be either 201 or 404 for two concurrent threads,
+        // and ensure that Same Name Sibling nodes are not created when status is 201.
+        final int statusFirst = firstTask.get().intValue();
+        if (statusFirst == CREATED.getStatusCode()) {
+            // test Same Name Sibling node creation on the first ingest
+            final String snSiblingUrl = req.getURI() + URLEncoder.encode("[2]", "UTF-8");
+            assertEquals(NOT_FOUND.getStatusCode(), getStatus(new HttpGet(snSiblingUrl)));
+        } else {
+            assertEquals(NOT_FOUND.getStatusCode(), statusFirst);
+        }
+
+        final int statusSecond = secondTask.get().intValue();
+        if (statusSecond == CREATED.getStatusCode()) {
+            // test Same Name Sibling node creation on the second ingest
+            final String snSiblingUrl = req.getURI() + URLEncoder.encode("[2]", "UTF-8");
+            assertEquals(NOT_FOUND.getStatusCode(), getStatus(new HttpGet(snSiblingUrl)));
+        } else {
+            assertEquals(NOT_FOUND.getStatusCode(), statusSecond);
+        }
+        executor.shutdown();
     }
 }
