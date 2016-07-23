@@ -391,7 +391,11 @@ public class FedoraLdp extends ContentExposingResource {
         }
 
         try {
-            session.save();
+            if (resource.isNew()) {
+                save(resource, path);
+            } else {
+                session.save();
+            }
         } catch (final RepositoryException e) {
             throw new RepositoryRuntimeException(e);
         }
@@ -567,7 +571,12 @@ public class FedoraLdp extends ContentExposingResource {
                     }
                 }
             }
-            session.save();
+
+            if (resource.isNew()) {
+                save(resource, newObjectPath);
+            } else {
+                session.save();
+            }
         } catch (final RepositoryException e) {
             throw new RepositoryRuntimeException(e);
         }
@@ -763,6 +772,23 @@ public class FedoraLdp extends ContentExposingResource {
         }
 
         return pid;
+    }
+
+    /**
+     * Perform save but prevent same-node-siblings from being created
+     * @param resource the FedoraResource to save
+     * @throws RepositoryException
+     */
+    private void save(final FedoraResource resource, final String path) throws RepositoryException {
+        synchronized (FedoraLdp.class) {
+            final FedoraResource existingNode = nodeService.find(session, path);
+            if (existingNode != null && !existingNode.getPath().equals(resource.getPath())) {
+                LOGGER.error("Same Name Sibling violation {}: {}", existingNode.getPath(), resource.getPath());
+                session.removeItem(resource.getPath());
+                throw new ClientErrorException("Resource Already Exists: " + path, CONFLICT);
+            }
+            session.save();
+        }
     }
 
     private static void checkLinkForLdpResourceCreation(final String link) {
